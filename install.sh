@@ -284,6 +284,7 @@ EOF
 		echo "plugin /usr/lib/openvpn/radiusplugin.so /etc/openvpn/radiusplugin.cnf"
 		echo "verify-client-cert none"
 		echo "username-as-common-name"
+        echo "duplicate-cn"
 	} >>/etc/openvpn/server.conf
 
 }
