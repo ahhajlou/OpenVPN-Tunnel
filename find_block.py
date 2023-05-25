@@ -18,9 +18,16 @@ class Util:
         self.block_start_line = None
         self.block_end_line = None
 
+        self.file_changed = False
+
 
     def get_splited_text(self):
         return self.splited_text
+
+
+    @property
+    def is_changed(self):
+        return self.file_changed
     
 
     def find_block(self):
@@ -57,7 +64,10 @@ class Util:
                 break
         else:
             raise Exception("End of block was not found.")
-            
+
+
+    def get_regex(find_str):
+        return re.compile(r'(\s*)' + r'([' + re.escape(string.punctuation) + r']*' + r'\s*' + f'{find_str}' + ')$')  # r'[\p{P}\p{S}]sql$'
 
 
     def replace(self, old, new):
@@ -66,14 +76,16 @@ class Util:
         if self.block_start_line is None or self.block_end_line is None:
             raise Exception("First call 'find_block' method.")
         
-        regex_pattern = re.compile(r'(\s*)' + r'([' + re.escape(string.punctuation) + r']*' + f'{old}' + ')$')  # r'[\p{P}\p{S}]sql$'
+        regex_pattern = Util.get_regex(old)
         for i in range(self.block_start_line, self.block_end_line):
             if re.match(regex_pattern, self.splited_text[i]):
                 main_str = re.search(regex_pattern, self.splited_text[i]).groups()[1]
                 break  #TODO: Is break necessary or may need to check another match
 
         if main_str:
+            print("Replaced")
             self.splited_text[i] = self.splited_text[i].replace(main_str, new)  # Replace string
+            self.file_changed = True
         
 
     def insert(self, find_str, insert_str, insert_after = True):
@@ -82,7 +94,7 @@ class Util:
         if self.block_start_line is None or self.block_end_line is None:
             raise Exception("First call 'find_block' method.")
         
-        regex_pattern = re.compile(r'(\s*)' + r'([' + re.escape(string.punctuation) + r']*' + f'{find_str}' + ')$')  # r'[\p{P}\p{S}]sql$'
+        regex_pattern = Util.get_regex(find_str)
         for i in range(self.block_start_line, self.block_end_line):
             if re.match(regex_pattern, self.splited_text[i]):
                 indent = re.search(regex_pattern, self.splited_text[i]).groups()[0]
@@ -90,8 +102,9 @@ class Util:
                 break
 
         if insert_index:
-            print('inserted')
+            print('Inserted')
             self.splited_text.insert(insert_index, indent + insert_str)  # insert string after a string
+            self.file_changed = True
 
 
 
@@ -151,9 +164,10 @@ def main():
             )
 
 
+    if o.is_changed:
+        with open(args.path, 'w') as f:
+            f.write("\n".join(o.get_splited_text()))
 
-    with open(args.path, 'w') as f:
-        f.write("\n".join(o.get_splited_text()))
 
 if __name__ == '__main__':
     main()
