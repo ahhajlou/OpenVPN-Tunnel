@@ -36,6 +36,30 @@ class Util:
                 break
 
 
+    def find_block2(self):
+        for i, s in enumerate(self.splited_text):
+            if self.block_start in s:
+                self.block_start_line = i
+                break
+        else:
+             raise Exception("Begining of block was not found.")
+
+        curly_braces_counter = 0
+        for j in range(self.block_start_line, len(self.splited_text)):
+            if "{" in self.splited_text[j]:
+                curly_braces_counter += 1
+
+            if "}" in self.splited_text[j]:
+                curly_braces_counter -= 1
+            
+            if curly_braces_counter <= 0:
+                self.block_end_line = j
+                break
+        else:
+            raise Exception("End of block was not found.")
+            
+
+
     def replace(self, old, new):
         main_str = None
 
@@ -91,10 +115,10 @@ def main():
     args = parser.parse_args()
 
     if args.replace and not (args.old_str and args.new_str):
-        raise Exception("Wrong")
+        raise Exception("--old-str or --new-str is empty.")
 
     if args.insert and not (args.find_str and args.insert_str):
-        raise Exception("Error")
+        raise Exception("--find-str or --insert-str is empty.")
 
     if not os.path.exists(args.path):
         raise Exception("File Does not exist.")
@@ -110,7 +134,7 @@ def main():
         block_end=args.block_end
         )
     
-    o.find_block()
+    o.find_block2()
 
     if args.replace:
         o.replace(
