@@ -372,7 +372,7 @@ INSTALL_APACHE() {
 
 
 CHECK_MARIADB() {
-	if mysql --version; then
+	if mysql --version >/dev/null 2>&1; then
 		echo -e "${GREEN}MariDB is already installed.${ENDCOLOR}"
 		echo -e "${BOLDRED}Mariadb has root password, you should enter that.${ENDCOLOR}"
 	else
@@ -380,11 +380,11 @@ CHECK_MARIADB() {
 	fi
 
 
-	if (mysql -u root -e "quit" >/dev/null 2>&1) || ! (mysql --version >/dev/null 2>&1); then
+	if (mysql -u root -e "quit" >/dev/null 2>&1) || ! (mysql --version >/dev/null 2>&1); then  # mariadb has not password or is not installed
 		until [[ $MARIADB_PASSWORD != "" ]]; do
 			read -s -r -p "Enter a new password for mariadb root user: " MARIADB_PASSWORD
 		done
-	else
+	else  # mariadb is installed
 		stcode=1
 		while [[ $stcode -ne 0 ]]; do
 			echo ""
@@ -525,7 +525,7 @@ INSTALL_DALORADIUS() {
 }
 
 
-FIX_RADACCT_TABLE() {
+function FIX_RADACCT_TABLE() {
 	mysql -u root -p"${MARIADB_PASSWORD}" -e "DROP TABLE radacct;" radius
     mysql -u root -p"${MARIADB_PASSWORD}" radius <<EOF
 CREATE TABLE radacct (
@@ -571,6 +571,63 @@ KEY nasipaddress (nasipaddress)
 ) ENGINE = INNODB;
 EOF
 }
+
+
+function EDIT_FREERADIUS_CONFIGS() {
+	# Bandwidth limit
+    ln -s "$RADIUSDIR"/mods-available/sqlcounter "$RADIUSDIR"/mods-enabled/sqlcounter
+
+    cat <<- EOF >"$RADIUSDIR"/mods-enabled/sqlcounter
+	#define a new sqlcounter
+	sqlcounter monthly_limit{ 
+	counter_name = 'Max-Total-Bandwidth'
+	
+	#define an attribute name. we will add this in daloRadius Profile
+	check_name = 'Monthly-Bandwidth'
+	
+	sql_module_instance = sql
+	key = 'User-Name'
+	dialect = mysql
+	reset = 30
+	
+	query = "SELECT SUM(acctinputoctets) + SUM(acctoutputoctets) FROM radacct WHERE UserName='%{\${key}}'"
+	}
+	EOF
+
+	
+	sed -i 's/${modules.sql.dialect}/mysql/g' "$RADIUSDIR"/mods-enabled/sqlcounter
+
+
+	# Choose accounting update interval
+	./find_block.py \
+		-p "$RADIUSDIR"/sites-enabled/default \
+		--block-start "post-auth {" \
+		--block-end "}" \
+		--insert --find-str "sql" \
+		--insert-position "after" \
+		--insert-str-stdin <<- EOF
+		update reply {
+                Acct-Interim-Interval = 60
+        }
+		EOF
+
+    
+    #TODO: Download and chmod 'find_block.py' script
+    # Uncomment sql in 'sites-enabled/default'
+    sections=('authorize' 'accounting' 'post-auth' 'session')
+
+    for section in "${sections[@]}"; do
+        ./find_block.py \
+            -p "$RADIUSDIR"/sites-enabled/default \
+            --block-start "$section {" \
+            --block-end "}" \
+            --uncomment \
+            --str-to-uncomment "sql"
+    done
+    
+
+}
+
 
 CONFIG_MYSQL() {
 	if [[ -z "$RADIUSDIR" ]]; then
@@ -735,6 +792,7 @@ function manageMenu() {
         INSTALL_PHP
         INSTALL_FREERADIUS
         INSTALL_DALORADIUS
+        EDIT_FREERADIUS_CONFIGS
         CONFIG_MYSQL
 		;;
 	2)
@@ -759,11 +817,8 @@ if ! isRoot; then
 fi
 
 set_colors
-setVars
 checkOS
+setVars
+
 
 manageMenu
-
-
-
-
