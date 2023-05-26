@@ -124,6 +124,7 @@ def main():
     parser.add_argument('-i', '--insert', action='store_true')
     parser.add_argument('--find-str', type=str, nargs=1, dest='find_str')
     parser.add_argument('--insert-str', type=str, nargs=1, dest='insert_str')
+    parser.add_argument('--insert-str-stdin', action="store_true")
     parser.add_argument('--insert-position', default='after', const='after', nargs='?', choices=['after', 'before'], dest='insert_position')
 
     args = parser.parse_args()
@@ -131,14 +132,26 @@ def main():
     if args.replace and not (args.old_str and args.new_str):
         raise Exception("--old-str or --new-str is empty.")
 
+    if (args.insert_str ^ args.insert_str_stdin == 0):
+        raise Exception("One of --insert-str or --inser-str-stdin should be provided.")
+    
     if args.insert and not (args.find_str and args.insert_str):
         raise Exception("--find-str or --insert-str is empty.")
+    
+    
+    if args.stdin:
+        input_strings = []
+        for line in sys.stdin:
+            input_strings.append(line)
+            sys.stdout.write(line)
+        insert_str_value = "\n".join(input_strings)
+    else:
+        insert_str_value = str(args.insert_str[0])
+
 
     if not os.path.exists(args.path):
         raise Exception("File Does not exist.")
     
-
-
     with open(args.path) as f:
         splited = f.read().splitlines()
 
@@ -160,7 +173,7 @@ def main():
         insert_after = True if args.insert_position == "after" else False
         o.insert(
             find_str = str(args.find_str[0]), 
-            insert_str = str(args.insert_str[0]), 
+            insert_str = insert_str_value, 
             insert_after = insert_after
             )
 
