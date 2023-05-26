@@ -68,7 +68,7 @@ class Util:
 
 
     def get_regex(find_str):
-        return re.compile(r'(\s*)' + r'([' + re.escape(string.punctuation) + r']*' + r'\s*' + f'{find_str}' + ')$')  # r'[\p{P}\p{S}]sql$'
+        return re.compile(r'(\s*)' + r'([' + re.escape(string.punctuation) + r']*)' + r'\s*' + '(' + f'{find_str}' + ')$')  # r'[\p{P}\p{S}]sql$'
 
 
     def replace(self, old, new):
@@ -78,14 +78,14 @@ class Util:
             raise Exception("First call 'find_block' method.")
         
         regex_pattern = Util.get_regex(old)
-        for i in range(self.block_start_line, self.block_end_line):
-            if re.match(regex_pattern, self.splited_text[i]):
-                main_str = re.search(regex_pattern, self.splited_text[i]).groups()[1]
+        for line in range(self.block_start_line, self.block_end_line):
+            if re.match(regex_pattern, self.splited_text[line]):
+                main_str = re.search(regex_pattern, self.splited_text[line]).groups()[2]
                 break  #TODO: Is break necessary or may need to check another match
 
         if main_str:
             print("Replaced")
-            self.splited_text[i] = self.splited_text[i].replace(main_str, new)  # Replace string
+            self.splited_text[line] = self.splited_text[line].replace(main_str, new)  # Replace string
             self.file_changed = True
         
 
@@ -96,10 +96,10 @@ class Util:
             raise Exception("First call 'find_block' method.")
         
         regex_pattern = Util.get_regex(find_str)
-        for i in range(self.block_start_line, self.block_end_line):
-            if re.match(regex_pattern, self.splited_text[i]):
-                indent = re.search(regex_pattern, self.splited_text[i]).groups()[0]
-                insert_index = i + 1 if insert_after else i
+        for line in range(self.block_start_line, self.block_end_line):
+            if re.match(regex_pattern, self.splited_text[line]):
+                indent = re.search(regex_pattern, self.splited_text[line]).groups()[0]
+                insert_index = line + 1 if insert_after else line
                 break
 
         if insert_index:
@@ -107,6 +107,18 @@ class Util:
             self.splited_text.insert(insert_index, indent + insert_str)  # insert string after a string
             self.file_changed = True
 
+
+    def uncomment(self, str_to_uncomment):
+        if self.block_start_line is None or self.block_end_line is None:
+            raise Exception("First call 'find_block' method.")
+        
+        regex_pattern = Util.get_regex(str_to_uncomment)
+        for line in range(self.block_start_line, self.block_end_line):
+            if re.match(regex_pattern, self.splited_text[line]):
+                comment_char = re.search(regex_pattern, self.splited_text[line]).groups()[1]  # Comment character groups as defined in 'get_regex()' function
+                self.splited_text[line] = self.splited_text[line].replace(comment_char, '')  # Replace string
+                self.file_changed = True
+                break  #TODO: Is break necessary or may need to check another match
 
 
 def main():
@@ -121,6 +133,9 @@ def main():
     parser.add_argument('--old-str', type=str, nargs=1, dest='old_str')
     parser.add_argument('--new-str', type=str, nargs=1, dest='new_str')
 
+    parser.add_argument('--uncomment', action='store_true')
+    parser.add_argument('--str-to-uncomment', type=str, dest='str_to_uncomment')
+
     parser.add_argument('-i', '--insert', action='store_true')
     parser.add_argument('--find-str', type=str, nargs=1, dest='find_str')
     parser.add_argument('--insert-str', type=str, nargs=1, dest='insert_str')
@@ -131,21 +146,24 @@ def main():
 
     if args.replace and not (args.old_str and args.new_str):
         raise Exception("--old-str or --new-str is empty.")
+    
+    if args.uncomment and not args.str_to_uncomment:
+         raise Exception("--str-to-uncomment is empty.")
 
-    if (args.insert_str ^ args.insert_str_stdin == 0):
+    if (bool(args.insert_str) ^ args.insert_str_stdin == 0):
         raise Exception("One of --insert-str or --inser-str-stdin should be provided.")
     
-    if args.insert and not (args.find_str and args.insert_str):
+    if args.insert and not (args.find_str):
         raise Exception("--find-str or --insert-str is empty.")
     
     
-    if args.stdin:
+    if args.insert and args.insert_str_stdin:
         input_strings = []
         for line in sys.stdin:
             input_strings.append(line)
             sys.stdout.write(line)
         insert_str_value = "\n".join(input_strings)
-    else:
+    elif args.insert and args.insert_str:
         insert_str_value = str(args.insert_str[0])
 
 
@@ -155,6 +173,7 @@ def main():
     with open(args.path) as f:
         splited = f.read().splitlines()
 
+    # Main class
     o = Util(
         splited, 
         block_start=args.block_start, 
