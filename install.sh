@@ -38,14 +38,14 @@ function setVars() {
 	# The UDP port for radius authentication.
 	export FREERADIUS_AUTH_PORT=1812
 	export FREERADIUS_IP="127.0.0.1"
-	export FREERADIUS_SHARED_SECRET="testing123"
+	#export FREERADIUS_SHARED_SECRET="testing123"
 
 	# Daloradius home directory
     DALORADIUSVERSION="1.2"
     DALORADIUSDIR="/var/www/html/daloradius"
 
     # SQL Config
-    RADIUSDBPASS="s93N2BmM7Y2cqP0mA"
+    #RADIUSDBPASS="s93N2BmM7Y2cqP0mA"
 
 }
 
@@ -149,10 +149,10 @@ function installOpenVPN() {
         sed -i "/^remote [0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+ [0-9]\+$/c\remote $DOMAIN $OPENVPN_PORT" /etc/openvpn/client-template.txt
     fi
 
-    installOpenvpnRadiusPlugin
-    configOpenVPNFreeRdius
+    # installOpenvpnRadiusPlugin
+    # configOpenVPNFreeRdius
 
-    systemctl restart openvpn@server.service
+    # systemctl restart openvpn@server.service
 
 
 	
@@ -286,6 +286,8 @@ EOF
 		echo "username-as-common-name"
         echo "duplicate-cn"
 	} >>/etc/openvpn/server.conf
+
+    systemctl restart openvpn@server.service
 
 }
 
@@ -574,6 +576,12 @@ EOF
 
 
 function EDIT_FREERADIUS_CONFIGS() {
+
+	cd /tmp || exit
+
+	wget -O find_block.py https://raw.githubusercontent.com/ahhajlou/OpenVPN-Tunnel/master/find_block.py
+	chmod +x find_block.py
+
 	# Bandwidth limit
     ln -s "$RADIUSDIR"/mods-available/sqlcounter "$RADIUSDIR"/mods-enabled/sqlcounter
 
@@ -598,7 +606,24 @@ function EDIT_FREERADIUS_CONFIGS() {
 	sed -i 's/${modules.sql.dialect}/mysql/g' "$RADIUSDIR"/mods-enabled/sqlcounter
 
 
-	# Choose accounting update interval
+
+    #TODO: Download and chmod 'find_block.py' script
+    chmod +x ./find_block.py
+    
+    # Uncomment sql in 'sites-enabled/default'
+    sections=('authorize' 'accounting' 'post-auth' 'session')
+
+    for section in "${sections[@]}"; do
+        ./find_block.py \
+            -p "$RADIUSDIR"/sites-enabled/default \
+            --block-start "$section {" \
+            --block-end "}" \
+            --uncomment \
+            --str-to-uncomment "sql"
+    done
+
+
+    # Choose accounting update interval
 	./find_block.py \
 		-p "$RADIUSDIR"/sites-enabled/default \
 		--block-start "post-auth {" \
@@ -611,20 +636,19 @@ function EDIT_FREERADIUS_CONFIGS() {
         }
 		EOF
 
-    
-    #TODO: Download and chmod 'find_block.py' script
-    # Uncomment sql in 'sites-enabled/default'
-    sections=('authorize' 'accounting' 'post-auth' 'session')
 
-    for section in "${sections[@]}"; do
-        ./find_block.py \
-            -p "$RADIUSDIR"/sites-enabled/default \
-            --block-start "$section {" \
-            --block-end "}" \
-            --uncomment \
-            --str-to-uncomment "sql"
-    done
-    
+    if [[ -z $FREERADIUS_SHARED_SECRET ]]; then
+        echo -e "${CYAN}The radius shared secret not defined, random secret will be generated${ENDCOLOR}"
+        FREERADIUS_SHARED_SECRET=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 16)
+    fi
+
+    ./find_block.py \
+    -p "$RADIUSDIR"/clients.conf \
+    --block-start "client localhost {" \
+    --block-end "}" \
+    --replace \
+    --old-str "secret = testing123" \
+    --new-str "secret = $FREERADIUS_SHARED_SECRET"
 
 }
 
@@ -777,9 +801,10 @@ function manageMenu() {
 	echo "   2) Remove OpenVPN + Utility"
 	echo "   3) Generate OpenVPN client config file"
     echo "   4) Enable TCP BBR"
-	echo "   5) Exit"
-	until [[ $MENU_OPTION =~ ^[1-4]$ ]]; do
-		read -rp "Select an option [1-4]: " MENU_OPTION
+    echo "   5) Only install freeradius + utility"
+	echo "   6) Exit"
+	until [[ $MENU_OPTION =~ ^[1-6]$ ]]; do
+		read -rp "Select an option [1-6]: " MENU_OPTION
 	done
 
 	case $MENU_OPTION in
@@ -791,9 +816,17 @@ function manageMenu() {
         INSTALL_MARIADB
         INSTALL_PHP
         INSTALL_FREERADIUS
-        INSTALL_DALORADIUS
+		if [[ $DALORADIUS_INSTALL_SOURCE == "true" ]]; then
+        	INSTALL_DALORADIUS_SOURCE
+		else
+			INSTALL_DALORADIUS
+		fi
+
         EDIT_FREERADIUS_CONFIGS
         CONFIG_MYSQL
+
+        installOpenvpnRadiusPlugin
+        configOpenVPNFreeRdius 
 		;;
 	2)
 		remove_all
@@ -804,7 +837,23 @@ function manageMenu() {
     4)
         enableTCPBBR
         ;;
-	5)
+    5)
+        CHECK_MARIADB
+        INSTALL_APACHE
+
+        INSTALL_MARIADB
+        INSTALL_PHP
+        INSTALL_FREERADIUS
+		if [[ $DALORADIUS_INSTALL_SOURCE == "true" ]]; then
+        	INSTALL_DALORADIUS_SOURCE
+		else
+			INSTALL_DALORADIUS
+		fi
+
+        EDIT_FREERADIUS_CONFIGS
+        CONFIG_MYSQL
+        ;;
+	6)
 		exit 0
 		;;
 	esac
