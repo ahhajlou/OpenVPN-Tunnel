@@ -385,13 +385,13 @@ CHECK_MARIADB() {
 			read -s -r -p "Enter a new password for mariadb root user: " MARIADB_PASSWORD
 		done
 	else  # mariadb is installed
-		stcode=1
-		while [[ $stcode -ne 0 ]]; do
+		status_code=1
+		while [[ $status_code -ne 0 ]]; do
 			echo ""
 			read -s -r -p "Enter password for mariadb root user: " MARIADB_PASSWORD
 			if [[ "$MARIADB_PASSWORD" != "" ]]; then
                 mysql -u root -p"$MARIADB_PASSWORD" -e "quit" >/dev/null 2>&1
-                stcode=$?
+                status_code=$?
 			fi
 		done
 	fi
