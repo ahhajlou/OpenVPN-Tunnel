@@ -33,7 +33,6 @@ class Util:
 
     def find_block(self):
         for i, s in enumerate(self.splited_text):
-            # print(s)
             if self.block_start in s:  # define start of the block --> eg: authorize { ... }
                 self.block_start_line = i
                 break
