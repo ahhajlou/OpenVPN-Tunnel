@@ -148,12 +148,12 @@ def main():
     
     if args.uncomment and not args.str_to_uncomment:
          raise Exception("--str-to-uncomment is empty.")
-
-    if (bool(args.insert_str) ^ args.insert_str_stdin == 0):
-        raise Exception("One of --insert-str or --inser-str-stdin should be provided.")
     
     if args.insert and not (args.find_str):
         raise Exception("--find-str or --insert-str is empty.")
+
+    if args.insert and (bool(args.insert_str) ^ args.insert_str_stdin == 0):
+        raise Exception("One of --insert-str or --inser-str-stdin should be provided.")
     
     
     if args.insert and args.insert_str_stdin:
