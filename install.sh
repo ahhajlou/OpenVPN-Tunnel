@@ -41,8 +41,9 @@ function setVars() {
 	#export FREERADIUS_SHARED_SECRET="testing123"
 
 	# Daloradius home directory
+	export DALORADIUS_INSTALL_SOURCE=true
     DALORADIUSVERSION="1.2"
-    DALORADIUSDIR="/var/www/html/daloradius"
+    DALORADIUSDIR="/var/www/daloradius"
 
     # SQL Config
     #RADIUSDBPASS="s93N2BmM7Y2cqP0mA"
@@ -194,8 +195,16 @@ function installOpenvpnRadiusPlugin() {
 
 
 function configOpenVPNFreeRdius() {
+	echo -e "${CYAN}The radius shared secret not defined${ENDCOLOR}"
+	until [[ "$FREERADIUS_SHARED_SECRET" != "" ]]; do
+		read -s -r -p "Enter radius shared secret: " FREERADIUS_SHARED_SECRET
+	done
+	echo ""
+
+	IP=$(ip -4 addr | sed -ne 's|^.* inet \([^/]*\)/.* scope global.*$|\1|p' | head -1)
+
 	cat > /etc/openvpn/radiusplugin.cnf <<EOF
-NAS-Identifier=OpenVPN
+NAS-Identifier=OpenVPN-$IP
 
 # The service type which is sent to the RADIUS server
 Service-Type=5
@@ -207,7 +216,7 @@ Framed-Protocol=1
 NAS-Port-Type=5
 
 # The NAS IP address which is sent to the RADIUS server
-NAS-IP-Address=172.17.0.56
+NAS-IP-Address=$IP
 
 # Path to the OpenVPN configfile. The plugin searches there for
 # client-config-dir PATH   (searches for the path)
@@ -526,6 +535,85 @@ INSTALL_DALORADIUS() {
 	rm -rf "/tmp/daloradius-${DALORADIUSVERSION}.zip" "/tmp/daloradius-${DALORADIUSVERSION}/"
 }
 
+function INSTALL_DALORADIUS_SOURCE() {
+    a2dissite 000-default.conf
+
+	if [[ $OS =~ (debian|ubuntu) ]]; then
+		apt install -y git
+	elif [[ $OS == 'centos' ]]; then
+		yum install -y git
+	fi
+    
+    cd ${DALORADIUSDIR%/*} || exit
+    git clone https://github.com/lirantal/daloradius.git
+
+    cat <<- EOF > /etc/apache2/ports.conf
+	Listen 80
+	Listen 8000
+
+	<IfModule ssl_module>
+		Listen 443
+	</IfModule>
+
+	<IfModule mod_gnutls.c>
+		Listen 443
+	</IfModule>
+	EOF
+
+    cat <<- EOF > /etc/apache2/sites-available/operators.conf
+	<VirtualHost *:8000>
+		ServerAdmin operators@localhost
+		DocumentRoot ${DALORADIUSDIR}/app/operators
+
+		<Directory ${DALORADIUSDIR}/app/operators>
+			Options -Indexes +FollowSymLinks
+			AllowOverride None
+			Require all granted
+		</Directory>
+
+		<Directory ${DALORADIUSDIR}>
+			Require all denied
+		</Directory>
+
+		ErrorLog \${APACHE_LOG_DIR}/daloradius/operators/error.log
+		CustomLog \${APACHE_LOG_DIR}/daloradius/operators/access.log combined
+	</VirtualHost>
+	EOF
+
+    cat <<- EOF > /etc/apache2/sites-available/users.conf
+	<VirtualHost *:80>
+		ServerAdmin users@localhost
+		DocumentRoot${DALORADIUSDIR}/app/users
+
+		<Directory ${DALORADIUSDIR}/app/users>
+			Options -Indexes +FollowSymLinks
+			AllowOverride None
+			Require all granted
+		</Directory>
+
+		<Directory ${DALORADIUSDIR}>
+			Require all denied
+		</Directory>
+
+		ErrorLog \${APACHE_LOG_DIR}/daloradius/users/error.log
+		CustomLog \${APACHE_LOG_DIR}/daloradius/users/access.log combined
+	</VirtualHost>
+	EOF
+
+    mkdir -p /var/log/apache2/daloradius/{operators,users}
+
+    a2ensite users.conf operators.conf
+
+    cd ${DALORADIUSDIR} || exit
+    mkdir -p var/{log,backup}
+    if [[ $OS =~ (debian|ubuntu) ]]; then
+        chown -R www-data:www-data var
+    elif [[ $OS == 'centos' ]]; then
+        chown -R apache:apache var
+    fi
+
+}
+
 
 function FIX_RADACCT_TABLE() {
 	mysql -u root -p"${MARIADB_PASSWORD}" -e "DROP TABLE radacct;" radius
@@ -585,7 +673,7 @@ function EDIT_FREERADIUS_CONFIGS() {
 	# Bandwidth limit
     ln -s "$RADIUSDIR"/mods-available/sqlcounter "$RADIUSDIR"/mods-enabled/sqlcounter
 
-    cat <<- EOF >"$RADIUSDIR"/mods-enabled/sqlcounter
+    cat <<- EOF >>"$RADIUSDIR"/mods-enabled/sqlcounter
 	#define a new sqlcounter
 	sqlcounter monthly_limit{ 
 	counter_name = 'Max-Total-Bandwidth'
@@ -621,6 +709,16 @@ function EDIT_FREERADIUS_CONFIGS() {
             --uncomment \
             --str-to-uncomment "sql"
     done
+
+    # add 'monthly_limit' at authorize section to check monthly bandwidth limit
+	./find_block.py \
+		-p "$RADIUSDIR"/sites-enabled/default \
+		--block-start "authorize {" \
+		--block-end "}" \
+		--insert --find-str "sql" \
+		--insert-position "after" \
+		--insert-str "monthly_limit"
+		EOF
 
 
     # Choose accounting update interval
@@ -691,14 +789,16 @@ CONFIG_MYSQL() {
 
     # Comment out tls for mysql in freeradius
     sed -i '/tls {/{:a;s/.*/#\0/;/\}[[:space:]]*$/!{n;ba}}' "${RADIUSDIR}/mods-available/sql"
-
     sed -i 's/dialect = "sqlite"/dialect = "mysql"/g' "${RADIUSDIR}/mods-available/sql"
     sed -i 's/driver = "rlm_sql_null"/#driver = "rlm_sql_null"/g' "${RADIUSDIR}/mods-available/sql"
     sed -i 's/#.*driver = "rlm_sql_${dialect}"/driver = "rlm_sql_${dialect}"/g' "${RADIUSDIR}/mods-available/sql"
+
+    #TODO: this section need to be rewrited, because it does not match in some cases.
     sed -i 's/#.*server = "localhost"/server = "localhost"/g' "${RADIUSDIR}/mods-available/sql"
     sed -i 's/#.*port = 3306/port = 3306/g' "${RADIUSDIR}/mods-available/sql"
     sed -i 's/#.*login = "radius"/login = "radius"/g' "${RADIUSDIR}/mods-available/sql"
     sed -i "s/#.*password = \"radpass\"/password = \"${RADIUSDBPASS}\"/g" "${RADIUSDIR}/mods-available/sql"
+
     sed -i 's/#.*read_clients = yes/read_clients = yes/g' "${RADIUSDIR}/mods-available/sql"
 
 
@@ -717,29 +817,39 @@ CONFIG_MYSQL() {
 
     # daloradius
     cd "$DALORADIUSDIR" || return
-    mysql -u root -p"${MARIADB_PASSWORD}" radius < "$DALORADIUSDIR/contrib/db/fr2-mysql-daloradius-and-freeradius.sql"
+	if [[ $DALORADIUS_INSTALL_SOURCE == "true" ]]; then
+		mysql -u root -p"${MARIADB_PASSWORD}" radius < "$DALORADIUSDIR/contrib/db/fr3-mysql-freeradius.sql"
+	else
+    	mysql -u root -p"${MARIADB_PASSWORD}" radius < "$DALORADIUSDIR/contrib/db/fr2-mysql-daloradius-and-freeradius.sql"
+	fi
     mysql -u root -p"${MARIADB_PASSWORD}" radius < "$DALORADIUSDIR/contrib/db/mysql-daloradius.sql"
 	FIX_RADACCT_TABLE
 
-    cp "${DALORADIUSDIR}/library/daloradius.conf.php.sample" "${DALORADIUSDIR}/library/daloradius.conf.php"
-    sed -i "s/\$configValues\['CONFIG_DB_USER'\] = 'root';/\$configValues\['CONFIG_DB_USER'\] = 'radius';/g" "${DALORADIUSDIR}/library/daloradius.conf.php"
-    sed -i "s/\$configValues\['CONFIG_DB_PASS'\] = '';/\$configValues\['CONFIG_DB_PASS'\] = '${RADIUSDBPASS}';/g" "${DALORADIUSDIR}/library/daloradius.conf.php"
-    
-	if [[ $OS =~ (debian|ubuntu) ]]; then
-		chown -R www-data:www-data "$DALORADIUSDIR"
-	elif [[ $OS == 'centos' ]]; then
-    	chown -R apache:apache "$DALORADIUSDIR"
-	fi
-	chmod 664 "${DALORADIUSDIR}/library/daloradius.conf.php"
 
-	if [[ $OS =~ (debian|ubuntu) ]]; then
-		systemctl restart freeradius.service apache2.service
-    	systemctl status freeradius.service apache2.service
-	elif [[ $OS == 'centos' ]]; then
+    #TODO: this section need to be rewrited, because it does not match in some cases.
+    if [[ $DALORADIUS_INSTALL_SOURCE == "true" ]]; then
+        cp "${DALORADIUSDIR}/app/common/includes/daloradius.conf.php.sample" "${DALORADIUSDIR}/app/common/includes/daloradius.conf.php"
+        sed -i "s/\$configValues\['CONFIG_DB_USER'\] = 'raduser';/\$configValues\['CONFIG_DB_USER'\] = 'radius';/g" "${DALORADIUSDIR}/app/common/includes/daloradius.conf.php"
+        sed -i "s/\$configValues\['CONFIG_DB_PASS'\] = 'radpass';/\$configValues\['CONFIG_DB_PASS'\] = '${RADIUSDBPASS}';/g" "${DALORADIUSDIR}/app/common/includes/daloradius.conf.php"
+        sed -i "s/\$configValues\['CONFIG_DB_NAME'\] = 'raddb';/\$configValues\['CONFIG_DB_NAME'\] = 'radius';/g" "${DALORADIUSDIR}/app/common/includes/daloradius.conf.php"
+        chmod 664 "${DALORADIUSDIR}/app/common/includes/daloradius.conf.php"
+    else
+        cp "${DALORADIUSDIR}/library/daloradius.conf.php.sample" "${DALORADIUSDIR}/library/daloradius.conf.php"
+        sed -i "s/\$configValues\['CONFIG_DB_USER'\] = 'root';/\$configValues\['CONFIG_DB_USER'\] = 'radius';/g" "${DALORADIUSDIR}/library/daloradius.conf.php"
+        sed -i "s/\$configValues\['CONFIG_DB_PASS'\] = '';/\$configValues\['CONFIG_DB_PASS'\] = '${RADIUSDBPASS}';/g" "${DALORADIUSDIR}/library/daloradius.conf.php"
+        chmod 664 "${DALORADIUSDIR}/library/daloradius.conf.php"
+    fi	
+
+    if [[ $OS =~ (debian|ubuntu) ]]; then
+        chown -R www-data:www-data "$DALORADIUSDIR"
+        systemctl restart freeradius.service apache2.service
+        systemctl status freeradius.service apache2.service
+    elif [[ $OS == 'centos' ]]; then
+        chown -R apache:apache "$DALORADIUSDIR"
     	systemctl restart radiusd.service httpd
     	systemctl status radiusd.service httpd
-	fi
-    
+    fi
+   
 }
 
 
@@ -784,7 +894,7 @@ function remove_all() {
         rm -rf /usr/share/freeradius
         rm -rf /usr/share/doc/freeradius
 
-        rm -rf /var/www/html/daloradius/
+        rm -rf $DALORADIUSDIR
 
 	elif [[ $OS == 'centos' ]]; then
 		dnf remove -y freeradius freeradius-utils freeradius-mysql freeradius-perl  #TODO: Not completed
@@ -797,18 +907,24 @@ function remove_all() {
 function manageMenu() {
 	echo ""
 	echo "What do you want to do?"
-	echo "   1) Install OpenVPN + Utility"
-	echo "   2) Remove OpenVPN + Utility"
-	echo "   3) Generate OpenVPN client config file"
-    echo "   4) Enable TCP BBR"
-    echo "   5) Only install freeradius + utility"
-	echo "   6) Exit"
-	until [[ $MENU_OPTION =~ ^[1-6]$ ]]; do
-		read -rp "Select an option [1-6]: " MENU_OPTION
+	echo "   1) Install OpenVPN"
+	echo "   2) Install OpenVPN + Utility"
+	echo "   3) Remove OpenVPN + Utility"
+	echo "   4) Generate OpenVPN client config file"
+    echo "   5) Enable TCP BBR"
+    echo "   6) Only install freeradius + utility"
+	echo "   7) Exit"
+	until [[ $MENU_OPTION =~ ^[1-7]$ ]]; do
+		read -rp "Select an option [1-7]: " MENU_OPTION
 	done
 
 	case $MENU_OPTION in
 	1)
+		installOpenVPN
+		installOpenvpnRadiusPlugin
+        configOpenVPNFreeRdius
+		;;
+	2)
         CHECK_MARIADB
         installOpenVPN
         INSTALL_APACHE
@@ -826,18 +942,18 @@ function manageMenu() {
         CONFIG_MYSQL
 
         installOpenvpnRadiusPlugin
-        configOpenVPNFreeRdius 
+        configOpenVPNFreeRdius
 		;;
-	2)
+	3)
 		remove_all
 		;;
-    3)
+    4)
         generateClientConf
         ;;
-    4)
+    5)
         enableTCPBBR
         ;;
-    5)
+    6)
         CHECK_MARIADB
         INSTALL_APACHE
 
@@ -853,7 +969,7 @@ function manageMenu() {
         EDIT_FREERADIUS_CONFIGS
         CONFIG_MYSQL
         ;;
-	6)
+	7)
 		exit 0
 		;;
 	esac
