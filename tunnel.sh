@@ -537,6 +537,7 @@ function Setup_Tunnel() {
 
 					[Service]
 					Type=simple
+					EnvironmentFile=/etc/ghostunnel/ghostunnel.conf
 					ExecStart=/usr/bin/ghostunnel client \
 					--listen \${LISTEN_IP}:\${LISTEN_PORT} \
 					--target \${TARGET_IP}:\${TARGET_PORT} \
