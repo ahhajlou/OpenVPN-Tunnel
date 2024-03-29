@@ -818,11 +818,11 @@ CONFIG_MYSQL() {
     # daloradius
     cd "$DALORADIUSDIR" || return
 	if [[ $DALORADIUS_INSTALL_SOURCE == "true" ]]; then
-		mysql -u root -p"${MARIADB_PASSWORD}" radius < "$DALORADIUSDIR/contrib/db/fr3-mysql-freeradius.sql"
+		mysql -u root -p"${MARIADB_PASSWORD}" radius < "$DALORADIUSDIR/contrib/db/fr3-mariadb-freeradius.sql"
 	else
     	mysql -u root -p"${MARIADB_PASSWORD}" radius < "$DALORADIUSDIR/contrib/db/fr2-mysql-daloradius-and-freeradius.sql"
 	fi
-    mysql -u root -p"${MARIADB_PASSWORD}" radius < "$DALORADIUSDIR/contrib/db/mysql-daloradius.sql"
+    mysql -u root -p"${MARIADB_PASSWORD}" radius < "$DALORADIUSDIR/contrib/db/mariadb-daloradius.sql"
 	FIX_RADACCT_TABLE
 
 
