@@ -583,7 +583,7 @@ function INSTALL_DALORADIUS_SOURCE() {
     cat <<- EOF > /etc/apache2/sites-available/users.conf
 	<VirtualHost *:80>
 		ServerAdmin users@localhost
-		DocumentRoot${DALORADIUSDIR}/app/users
+		DocumentRoot ${DALORADIUSDIR}/app/users
 
 		<Directory ${DALORADIUSDIR}/app/users>
 			Options -Indexes +FollowSymLinks
