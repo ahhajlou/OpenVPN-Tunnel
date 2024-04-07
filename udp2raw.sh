@@ -22,15 +22,15 @@ function DownloadUDP2RAW() {
 
 function ServerConfig() {
 	until [[ "$MAIN_SERVER_U2R_PORT" != "" ]]; do
-		read -s -r -p "Enter UDP2RAW listening port: " MAIN_SERVER_U2R_PORT
+		read -r -p "Enter UDP2RAW listening port: " MAIN_SERVER_U2R_PORT
 	done
 
 	until [[ "$MAIN_SERVER_LOCAL_PORT" != "" ]]; do
-		read -s -r -p "Enter local port you want to forward to: " MAIN_SERVER_LOCAL_PORT
+		read -r -p "Enter local port you want to forward to: " MAIN_SERVER_LOCAL_PORT
 	done
 
 	until [[ "$UDP2RAW_SECRET" != "" ]]; do
-		read -s -r -p "Enter UDP2RAW secret: " UDP2RAW_SECRET
+		read -r -p "Enter UDP2RAW secret: " UDP2RAW_SECRET
 	done
 
 
@@ -73,20 +73,20 @@ function ServerConfig() {
 
 function ClientConfig() {
 	until [[ "$MAIN_SERVER_IP" != "" ]]; do
-		read -s -r -p "Enter main server UDP2RAW listening port: " MAIN_SERVER_IP
+		read -r -p "Enter main server UDP2RAW listening IP: " MAIN_SERVER_IP
 	done
 
 	until [[ "$MAIN_SERVER_U2R_PORT" != "" ]]; do
-		read -s -r -p "Enter UDP2RAW listening port: " MAIN_SERVER_U2R_PORT
+		read -r -p "Enter UDP2RAW listening port: " MAIN_SERVER_U2R_PORT
 	done
 
 	until [[ "$UDP2RAW_SECRET" != "" ]]; do
-		read -s -r -p "Enter UDP2RAW secret: " UDP2RAW_SECRET
+		read -r -p "Enter UDP2RAW secret: " UDP2RAW_SECRET
 	done
 
 
 	until [[ "$CLIENT_LOCAL_PORT" != "" ]]; do
-		read -s -r -p "Enter local port you want to listen and forward to main server: " CLIENT_LOCAL_PORT
+		read -r -p "Enter local port you want to listen and forward to main server: " CLIENT_LOCAL_PORT
 	done
 
 
